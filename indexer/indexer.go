@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 const (
-	DefaultMaxPrefixPerNode         = 16
-	DefaultMaxChildrenPerSparseNode = 16
+	defaultMaxPrefixPerNode         = 16
+	defaultMaxChildrenPerSparseNode = 16
 )
 
 type (
@@ -24,63 +26,41 @@ type (
 
 // Trie is not thread-safe.
 type Trie struct {
-	prefix Prefix
-	item   *Item
+	Prefix Prefix
+	Item   *Item
 
-	maxPrefixPerNode         int
-	maxChildrenPerSparseNode int
-
-	children childList
+	Children childList
 }
 
-type Option func(*Trie)
+func (trie *Trie) Marshal() ([]byte, error) {
+	return msgpack.Marshal(trie)
+}
+
+func (trie *Trie) Unmarshal(data []byte) error {
+	return msgpack.Unmarshal(data, trie)
+}
 
 // Trie constructor.
-func NewTrie(options ...Option) *Trie {
+func NewTrie() *Trie {
 	trie := &Trie{}
 
-	for _, opt := range options {
-		opt(trie)
-	}
-
-	if trie.maxPrefixPerNode <= 0 {
-		trie.maxPrefixPerNode = DefaultMaxPrefixPerNode
-	}
-	if trie.maxChildrenPerSparseNode <= 0 {
-		trie.maxChildrenPerSparseNode = DefaultMaxChildrenPerSparseNode
-	}
-
-	trie.children = newSparseChildList(trie.maxChildrenPerSparseNode)
+	trie.Children = newSparseChildList(defaultMaxChildrenPerSparseNode)
 	return trie
-}
-
-func MaxPrefixPerNode(value int) Option {
-	return func(trie *Trie) {
-		trie.maxPrefixPerNode = value
-	}
-}
-
-func MaxChildrenPerSparseNode(value int) Option {
-	return func(trie *Trie) {
-		trie.maxChildrenPerSparseNode = value
-	}
 }
 
 // Clone makes a copy of an existing trie.
 // Items stored in both tries become shared, obviously.
 func (trie *Trie) Clone() *Trie {
 	return &Trie{
-		prefix:                   append(Prefix(nil), trie.prefix...),
-		item:                     trie.item,
-		maxPrefixPerNode:         trie.maxPrefixPerNode,
-		maxChildrenPerSparseNode: trie.maxChildrenPerSparseNode,
-		children:                 trie.children.clone(),
+		Prefix:   append(Prefix(nil), trie.Prefix...),
+		Item:     trie.Item,
+		Children: trie.Children.clone(),
 	}
 }
 
 // Item returns the item stored in the root of this trie.
-func (trie *Trie) Item() *Item {
-	return trie.item
+func (trie *Trie) Value() *Item {
+	return trie.Item
 }
 
 // Insert inserts a new item into the trie using the given prefix. Insert does
@@ -108,7 +88,7 @@ func (trie *Trie) Get(key Prefix) (item *Item) {
 	if !found || len(leftover) != 0 {
 		return nil
 	}
-	return node.item
+	return node.Item
 }
 
 // Match returns what Get(prefix) != nil would return. The same warning as for
@@ -147,7 +127,7 @@ func (trie *Trie) size() int {
 }
 
 func (trie *Trie) total() int {
-	return 1 + trie.children.total()
+	return 1 + trie.Children.total()
 }
 
 // VisitSubtree works much like Visit, but it only visits nodes matching prefix.
@@ -158,7 +138,7 @@ func (trie *Trie) VisitSubtree(prefix Prefix, visitor VisitorFunc) error {
 	}
 
 	// Empty trie must be handled explicitly.
-	if trie.prefix == nil {
+	if trie.Prefix == nil {
 		return nil
 	}
 
@@ -182,7 +162,7 @@ func (trie *Trie) VisitPrefixes(key Prefix, visitor VisitorFunc) error {
 	}
 
 	// Empty trie must be handled explicitly.
-	if trie.prefix == nil {
+	if trie.Prefix == nil {
 		return nil
 	}
 
@@ -197,12 +177,12 @@ func (trie *Trie) VisitPrefixes(key Prefix, visitor VisitorFunc) error {
 		offset += common
 
 		// Partial match means that there is no subtree matching prefix.
-		if common < len(node.prefix) {
+		if common < len(node.Prefix) {
 			return nil
 		}
 
 		// Call the visitor.
-		if item := node.item; item != nil {
+		if item := node.Item; item != nil {
 			if err := visitor(prefix[:offset], item); err != nil {
 				return err
 			}
@@ -214,7 +194,7 @@ func (trie *Trie) VisitPrefixes(key Prefix, visitor VisitorFunc) error {
 		}
 
 		// There is some key suffix left, move to the children.
-		child := node.children.next(key[0])
+		child := node.Children.next(key[0])
 		if child == nil {
 			// There is nowhere to continue, return.
 			return nil
@@ -234,7 +214,7 @@ func (trie *Trie) Delete(key Prefix) (deleted bool) {
 	}
 
 	// Empty trie must be handled explicitly.
-	if trie.prefix == nil {
+	if trie.Prefix == nil {
 		return false
 	}
 
@@ -251,12 +231,12 @@ func (trie *Trie) Delete(key Prefix) (deleted bool) {
 	}
 
 	// If the item is already set to nil, there is nothing to do.
-	if node.item == nil {
+	if node.Item == nil {
 		return false
 	}
 
 	// Delete the item.
-	node.item = nil
+	node.Item = nil
 
 	// Initialise i before goto.
 	// Will be used later in a loop.
@@ -264,7 +244,7 @@ func (trie *Trie) Delete(key Prefix) (deleted bool) {
 
 	// In case there are some child nodes, we cannot drop the whole subtree.
 	// We can try to compact nodes, though.
-	if node.children.length() != 0 {
+	if node.Children.length() != 0 {
 		goto Compact
 	}
 
@@ -278,7 +258,7 @@ func (trie *Trie) Delete(key Prefix) (deleted bool) {
 	// Find the first ancestor that has its value set or it has 2 or more child nodes.
 	// That will be the node where to drop the subtree at.
 	for ; i >= 0; i-- {
-		if current := path[i]; current.item != nil || current.children.length() >= 2 {
+		if current := path[i]; current.Item != nil || current.Children.length() >= 2 {
 			break
 		}
 	}
@@ -300,7 +280,7 @@ func (trie *Trie) Delete(key Prefix) (deleted bool) {
 	// i+1 is always a valid index since i is never pointing to the last node.
 	// The loop above skips at least the last node since we are sure that the item
 	// is set to nil and it has no children, othewise we would be compacting instead.
-	node.children.remove(path[i+1].prefix[0])
+	node.Children.remove(path[i+1].Prefix[0])
 
 Compact:
 	// The node is set to the first non-empty ancestor,
@@ -309,7 +289,7 @@ Compact:
 		if parent == nil {
 			*node = *compacted
 		} else {
-			parent.children.replace(node.prefix[0], compacted)
+			parent.Children.replace(node.Prefix[0], compacted)
 			*parent = *parent.compact()
 		}
 	}
@@ -327,7 +307,7 @@ func (trie *Trie) DeleteSubtree(prefix Prefix) (deleted bool) {
 	}
 
 	// Empty trie must be handled explicitly.
-	if trie.prefix == nil {
+	if trie.Prefix == nil {
 		return false
 	}
 
@@ -344,19 +324,19 @@ func (trie *Trie) DeleteSubtree(prefix Prefix) (deleted bool) {
 	}
 
 	// Otherwise remove the root node from its parent.
-	parent.children.remove(root.prefix[0])
+	parent.Children.remove(root.Prefix[0])
 	return true
 }
 
 // Internal helper methods -----------------------------------------------------
 
 func (trie *Trie) empty() bool {
-	return trie.item == nil && trie.children.length() == 0
+	return trie.Item == nil && trie.Children.length() == 0
 }
 
 func (trie *Trie) reset() {
-	trie.prefix = nil
-	trie.children = newSparseChildList(trie.maxPrefixPerNode)
+	trie.Prefix = nil
+	trie.Children = newSparseChildList(defaultMaxPrefixPerNode)
 }
 
 func (trie *Trie) put(key Prefix, item *Item, replace bool) (inserted bool) {
@@ -371,13 +351,13 @@ func (trie *Trie) put(key Prefix, item *Item, replace bool) (inserted bool) {
 		child  *Trie
 	)
 
-	if node.prefix == nil {
-		if len(key) <= trie.maxPrefixPerNode {
-			node.prefix = key
+	if node.Prefix == nil {
+		if len(key) <= defaultMaxPrefixPerNode {
+			node.Prefix = key
 			goto InsertItem
 		}
-		node.prefix = key[:trie.maxPrefixPerNode]
-		key = key[trie.maxPrefixPerNode:]
+		node.Prefix = key[:defaultMaxPrefixPerNode]
+		key = key[defaultMaxPrefixPerNode:]
 		goto AppendChild
 	}
 
@@ -387,7 +367,7 @@ func (trie *Trie) put(key Prefix, item *Item, replace bool) (inserted bool) {
 		key = key[common:]
 
 		// Only a part matches, split.
-		if common < len(node.prefix) {
+		if common < len(node.Prefix) {
 			goto SplitPrefix
 		}
 
@@ -399,7 +379,7 @@ func (trie *Trie) put(key Prefix, item *Item, replace bool) (inserted bool) {
 		}
 
 		// Check children for matching prefix.
-		child = node.children.next(key[0])
+		child = node.Children.next(key[0])
 		if child == nil {
 			goto AppendChild
 		}
@@ -411,33 +391,33 @@ SplitPrefix:
 	child = new(Trie)
 	*child = *node
 	*node = *NewTrie()
-	node.prefix = child.prefix[:common]
-	child.prefix = child.prefix[common:]
+	node.Prefix = child.Prefix[:common]
+	child.Prefix = child.Prefix[common:]
 	child = child.compact()
-	node.children = node.children.add(child)
+	node.Children = node.Children.add(child)
 
 AppendChild:
 	// Keep appending children until whole prefix is inserted.
 	// This loop starts with empty node.prefix that needs to be filled.
 	for len(key) != 0 {
 		child := NewTrie()
-		if len(key) <= trie.maxPrefixPerNode {
-			child.prefix = key
-			node.children = node.children.add(child)
+		if len(key) <= defaultMaxPrefixPerNode {
+			child.Prefix = key
+			node.Children = node.Children.add(child)
 			node = child
 			goto InsertItem
 		} else {
-			child.prefix = key[:trie.maxPrefixPerNode]
-			key = key[trie.maxPrefixPerNode:]
-			node.children = node.children.add(child)
+			child.Prefix = key[:defaultMaxPrefixPerNode]
+			key = key[defaultMaxPrefixPerNode:]
+			node.Children = node.Children.add(child)
 			node = child
 		}
 	}
 
 InsertItem:
 	// Try to insert the item if possible.
-	if replace || node.item == nil {
-		node.item = item
+	if replace || node.Item == nil {
+		node.Item = item
 		return true
 	}
 	return false
@@ -445,28 +425,28 @@ InsertItem:
 
 func (trie *Trie) compact() *Trie {
 	// Only a node with a single child can be compacted.
-	if trie.children.length() != 1 {
+	if trie.Children.length() != 1 {
 		return trie
 	}
 
-	child := trie.children.head()
+	child := trie.Children.head()
 
 	// If any item is set, we cannot compact since we want to retain
 	// the ability to do searching by key. This makes compaction less usable,
 	// but that simply cannot be avoided.
-	if trie.item != nil || child.item != nil {
+	if trie.Item != nil || child.Item != nil {
 		return trie
 	}
 
 	// Make sure the combined prefixes fit into a single node.
-	if len(trie.prefix)+len(child.prefix) > trie.maxPrefixPerNode {
+	if len(trie.Prefix)+len(child.Prefix) > defaultMaxPrefixPerNode {
 		return trie
 	}
 
 	// Concatenate the prefixes, move the items.
-	child.prefix = append(trie.prefix, child.prefix...)
-	if trie.item != nil {
-		child.item = trie.item
+	child.Prefix = append(trie.Prefix, child.Prefix...)
+	if trie.Item != nil {
+		child.Item = trie.Item
 	}
 
 	return child
@@ -483,18 +463,18 @@ func (trie *Trie) findSubtree(prefix Prefix) (parent *Trie, root *Trie, found bo
 		// We used up the whole prefix, subtree found.
 		if len(prefix) == 0 {
 			found = true
-			leftover = root.prefix[common:]
+			leftover = root.Prefix[common:]
 			return
 		}
 
 		// Partial match means that there is no subtree matching prefix.
-		if common < len(root.prefix) {
-			leftover = root.prefix[common:]
+		if common < len(root.Prefix) {
+			leftover = root.Prefix[common:]
 			return
 		}
 
 		// There is some prefix left, move to the children.
-		child := root.children.next(prefix[0])
+		child := root.Children.next(prefix[0])
 		if child == nil {
 			// There is nowhere to continue, there is no subtree matching prefix.
 			return
@@ -521,18 +501,18 @@ func (trie *Trie) findSubtreePath(prefix Prefix) (path []*Trie, found bool, left
 		if len(prefix) == 0 {
 			path = subtreePath
 			found = true
-			leftover = root.prefix[common:]
+			leftover = root.Prefix[common:]
 			return
 		}
 
 		// Partial match means that there is no subtree matching prefix.
-		if common < len(root.prefix) {
-			leftover = root.prefix[common:]
+		if common < len(root.Prefix) {
+			leftover = root.Prefix[common:]
 			return
 		}
 
 		// There is some prefix left, move to the children.
-		child := root.children.next(prefix[0])
+		child := root.Children.next(prefix[0])
 		if child == nil {
 			// There is nowhere to continue, there is no subtree matching prefix.
 			return
@@ -546,9 +526,9 @@ func (trie *Trie) walk(actualRootPrefix Prefix, visitor VisitorFunc) error {
 	var prefix Prefix
 	// Allocate a bit more space for prefix at the beginning.
 	if actualRootPrefix == nil {
-		prefix = make(Prefix, 32+len(trie.prefix))
-		copy(prefix, trie.prefix)
-		prefix = prefix[:len(trie.prefix)]
+		prefix = make(Prefix, 32+len(trie.Prefix))
+		copy(prefix, trie.Prefix)
+		prefix = prefix[:len(trie.Prefix)]
 	} else {
 		prefix = make(Prefix, 32+len(actualRootPrefix))
 		copy(prefix, actualRootPrefix)
@@ -557,8 +537,8 @@ func (trie *Trie) walk(actualRootPrefix Prefix, visitor VisitorFunc) error {
 
 	// Visit the root first. Not that this works for empty trie as well since
 	// in that case item == nil && len(children) == 0.
-	if trie.item != nil {
-		if err := visitor(prefix, trie.item); err != nil {
+	if trie.Item != nil {
+		if err := visitor(prefix, trie.Item); err != nil {
 			if err == SkipSubtree {
 				return nil
 			}
@@ -567,11 +547,11 @@ func (trie *Trie) walk(actualRootPrefix Prefix, visitor VisitorFunc) error {
 	}
 
 	// Then continue to the children.
-	return trie.children.walk(&prefix, visitor)
+	return trie.Children.walk(&prefix, visitor)
 }
 
 func (trie *Trie) longestCommonPrefixLength(prefix Prefix) (i int) {
-	for ; i < len(prefix) && i < len(trie.prefix) && prefix[i] == trie.prefix[i]; i++ {
+	for ; i < len(prefix) && i < len(trie.Prefix) && prefix[i] == trie.Prefix[i]; i++ {
 	}
 	return
 }
@@ -583,8 +563,8 @@ func (trie *Trie) Dump() string {
 }
 
 func (trie *Trie) print(writer io.Writer, indent int) {
-	fmt.Fprintf(writer, "%s%s %v\n", strings.Repeat(" ", indent), string(trie.prefix), trie.item)
-	trie.children.print(writer, indent+2)
+	fmt.Fprintf(writer, "%s%s %v\n", strings.Repeat(" ", indent), string(trie.Prefix), trie.Item)
+	trie.Children.print(writer, indent+2)
 }
 
 // Errors ----------------------------------------------------------------------

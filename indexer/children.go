@@ -26,7 +26,7 @@ func (t tries) Len() int {
 }
 
 func (t tries) Less(i, j int) bool {
-	strings := sort.StringSlice{string(t[i].prefix), string(t[j].prefix)}
+	strings := sort.StringSlice{string(t[i].Prefix), string(t[j].Prefix)}
 	return strings.Less(0, 1)
 }
 
@@ -65,7 +65,7 @@ func (list *sparseChildList) add(child *Trie) childList {
 
 func (list *sparseChildList) remove(b byte) {
 	for i, node := range list.children {
-		if node.prefix[0] == b {
+		if node.Prefix[0] == b {
 			list.children[i] = list.children[len(list.children)-1]
 			list.children[len(list.children)-1] = nil
 			list.children = list.children[:len(list.children)-1]
@@ -79,13 +79,13 @@ func (list *sparseChildList) remove(b byte) {
 
 func (list *sparseChildList) replace(b byte, child *Trie) {
 	// Make a consistency check.
-	if p0 := child.prefix[0]; p0 != b {
+	if p0 := child.Prefix[0]; p0 != b {
 		panic(fmt.Errorf("child prefix mismatch: %v != %v", p0, b))
 	}
 
 	// Seek the child and replace it.
 	for i, node := range list.children {
-		if node.prefix[0] == b {
+		if node.Prefix[0] == b {
 			list.children[i] = child
 			return
 		}
@@ -94,7 +94,7 @@ func (list *sparseChildList) replace(b byte, child *Trie) {
 
 func (list *sparseChildList) next(b byte) *Trie {
 	for _, child := range list.children {
-		if child.prefix[0] == b {
+		if child.Prefix[0] == b {
 			return child
 		}
 	}
@@ -106,21 +106,21 @@ func (list *sparseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
 	sort.Sort(list.children)
 
 	for _, child := range list.children {
-		*prefix = append(*prefix, child.prefix...)
-		if child.item != nil {
-			err := visitor(*prefix, child.item)
+		*prefix = append(*prefix, child.Prefix...)
+		if child.Item != nil {
+			err := visitor(*prefix, child.Item)
 			if err != nil {
 				if err == SkipSubtree {
-					*prefix = (*prefix)[:len(*prefix)-len(child.prefix)]
+					*prefix = (*prefix)[:len(*prefix)-len(child.Prefix)]
 					continue
 				}
-				*prefix = (*prefix)[:len(*prefix)-len(child.prefix)]
+				*prefix = (*prefix)[:len(*prefix)-len(child.Prefix)]
 				return err
 			}
 		}
 
-		err := child.children.walk(prefix, visitor)
-		*prefix = (*prefix)[:len(*prefix)-len(child.prefix)]
+		err := child.Children.walk(prefix, visitor)
+		*prefix = (*prefix)[:len(*prefix)-len(child.Prefix)]
 		if err != nil {
 			return err
 		}
@@ -172,7 +172,7 @@ func newDenseChildList(list *sparseChildList, child *Trie) childList {
 		max int = 0
 	)
 	for _, child := range list.children {
-		b := int(child.prefix[0])
+		b := int(child.Prefix[0])
 		if b < min {
 			min = b
 		}
@@ -181,7 +181,7 @@ func newDenseChildList(list *sparseChildList, child *Trie) childList {
 		}
 	}
 
-	b := int(child.prefix[0])
+	b := int(child.Prefix[0])
 	if b < min {
 		min = b
 	}
@@ -191,9 +191,9 @@ func newDenseChildList(list *sparseChildList, child *Trie) childList {
 
 	children := make([]*Trie, max-min+1)
 	for _, child := range list.children {
-		children[int(child.prefix[0])-min] = child
+		children[int(child.Prefix[0])-min] = child
 	}
-	children[int(child.prefix[0])-min] = child
+	children[int(child.Prefix[0])-min] = child
 
 	return &denseChildList{
 		min:         min,
@@ -213,7 +213,7 @@ func (list *denseChildList) head() *Trie {
 }
 
 func (list *denseChildList) add(child *Trie) childList {
-	b := int(child.prefix[0])
+	b := int(child.Prefix[0])
 	var i int
 
 	switch {
@@ -270,7 +270,7 @@ func (list *denseChildList) remove(b byte) {
 
 func (list *denseChildList) replace(b byte, child *Trie) {
 	// Make a consistency check.
-	if p0 := child.prefix[0]; p0 != b {
+	if p0 := child.Prefix[0]; p0 != b {
 		panic(fmt.Errorf("child prefix mismatch: %v != %v", p0, b))
 	}
 
@@ -291,20 +291,20 @@ func (list *denseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
 		if child == nil {
 			continue
 		}
-		*prefix = append(*prefix, child.prefix...)
-		if child.item != nil {
-			if err := visitor(*prefix, child.item); err != nil {
+		*prefix = append(*prefix, child.Prefix...)
+		if child.Item != nil {
+			if err := visitor(*prefix, child.Item); err != nil {
 				if err == SkipSubtree {
-					*prefix = (*prefix)[:len(*prefix)-len(child.prefix)]
+					*prefix = (*prefix)[:len(*prefix)-len(child.Prefix)]
 					continue
 				}
-				*prefix = (*prefix)[:len(*prefix)-len(child.prefix)]
+				*prefix = (*prefix)[:len(*prefix)-len(child.Prefix)]
 				return err
 			}
 		}
 
-		err := child.children.walk(prefix, visitor)
-		*prefix = (*prefix)[:len(*prefix)-len(child.prefix)]
+		err := child.Children.walk(prefix, visitor)
+		*prefix = (*prefix)[:len(*prefix)-len(child.Prefix)]
 		if err != nil {
 			return err
 		}
