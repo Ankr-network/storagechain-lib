@@ -1,18 +1,19 @@
 package indexer
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 
-	"github.com/vmihailenco/msgpack/v5"
+	"github.com/valyala/gozstd"
 )
 
 const (
-	defaultMaxPrefixPerNode         = 16
-	defaultMaxChildrenPerSparseNode = 16
+	defaultMaxPrefixPerNode         = 32
+	defaultMaxChildrenPerSparseNode = 32
 )
 
 type (
@@ -29,15 +30,48 @@ type Trie struct {
 	Prefix Prefix
 	Item   *Item
 
-	Children childList
+	Children ChildList
 }
 
+const (
+	EndChar = '\n'
+)
+
+var (
+	SplitChar = []byte("|")
+)
+
 func (trie *Trie) Marshal() ([]byte, error) {
-	return msgpack.Marshal(trie)
+	var buffer bytes.Buffer
+	buffer.Reset()
+	trie.Walk(nil, func(prefix Prefix, item *Item) error {
+		buffer.Write(prefix)
+		buffer.Write(Itos(item.Pos))
+		buffer.Write(Itos(item.Length))
+		return nil
+	})
+	return gozstd.Compress(nil, buffer.Bytes()), nil
 }
 
 func (trie *Trie) Unmarshal(data []byte) error {
-	return msgpack.Unmarshal(data, trie)
+	ds, err := gozstd.Decompress(nil, data)
+	if err != nil {
+		return err
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(ds))
+	scanner.Split(ScanData)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		fmt.Printf("line: %q\n", line)
+		key := line[:32]
+		pos := Stoi(line[32:40])
+		length := Stoi(line[40:48])
+		trie.Set(key, &Item{Pos: pos, Length: length})
+	}
+	return nil
 }
 
 // Trie constructor.
@@ -112,13 +146,13 @@ func (trie *Trie) MatchSubtree(key Prefix) (matched bool) {
 // case Visit skips the subtree represented by the current node and continues
 // elsewhere.
 func (trie *Trie) Visit(visitor VisitorFunc) error {
-	return trie.walk(nil, visitor)
+	return trie.Walk(nil, visitor)
 }
 
-func (trie *Trie) size() int {
+func (trie *Trie) Size() int {
 	n := 0
 
-	trie.walk(nil, func(prefix Prefix, item *Item) error {
+	trie.Walk(nil, func(_ Prefix, _ *Item) error {
 		n++
 		return nil
 	})
@@ -150,7 +184,7 @@ func (trie *Trie) VisitSubtree(prefix Prefix, visitor VisitorFunc) error {
 	prefix = append(prefix, leftover...)
 
 	// Visit it.
-	return root.walk(prefix, visitor)
+	return root.Walk(prefix, visitor)
 }
 
 // VisitPrefixes visits only nodes that represent prefixes of key.
@@ -522,7 +556,7 @@ func (trie *Trie) findSubtreePath(prefix Prefix) (path []*Trie, found bool, left
 	}
 }
 
-func (trie *Trie) walk(actualRootPrefix Prefix, visitor VisitorFunc) error {
+func (trie *Trie) Walk(actualRootPrefix Prefix, visitor VisitorFunc) error {
 	var prefix Prefix
 	// Allocate a bit more space for prefix at the beginning.
 	if actualRootPrefix == nil {

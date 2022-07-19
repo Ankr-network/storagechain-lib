@@ -1,14 +1,69 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Ankr-network/storagechain-lib/indexer"
+	"github.com/sunvim/utils/tools"
 )
 
 func main() {
+
+	// testFunc()
+	testCompress()
+
+}
+
+func testCompress() {
+	// Create a new tree.
+	trie := indexer.NewTrie()
+
+	hasher := sha256.New()
+	for i := 0; i < 100; i++ {
+		hasher.Reset()
+		hasher.Write(tools.StringToBytes(strings.Repeat(strconv.Itoa(i), 16)))
+		trie.Insert(indexer.Prefix(hasher.Sum(nil)),
+			&indexer.Item{Pos: uint64(i), Length: uint64(i)})
+	}
+
+	hasher.Reset()
+	hasher.Write(tools.StringToBytes(strings.Repeat(strconv.Itoa(12), 16)))
+	target := indexer.Prefix(hasher.Sum(nil))
+	item := trie.Get(target)
+	fmt.Printf("item: %v\n", item)
+
+	fmt.Printf("trie size: %d\n", trie.Size())
+
+	// trie.Walk(nil, func(prefix indexer.Prefix, item *indexer.Item) error {
+	// 	fmt.Printf("%s  %v\n", prefix, item)
+	// 	return nil
+	// })
+	// fmt.Println(strings.Repeat("-", 80))
+
+	ss, err := trie.Marshal()
+	if err != nil {
+		fmt.Printf("Marshal error: %v\n", err)
+		return
+	}
+	fmt.Printf("origin marshal size: %d \n", len(ss))
+
+	t2 := indexer.NewTrie()
+	err = t2.Unmarshal(ss)
+	if err != nil {
+		fmt.Printf("unmarshal error: %v\n", err)
+		return
+	}
+	fmt.Printf("t2: %v\n", t2)
+	item = t2.Get(target)
+	fmt.Printf("item: %v\n", item)
+
+}
+
+func testFunc() {
 	// Create a new tree.
 	trie := indexer.NewTrie()
 

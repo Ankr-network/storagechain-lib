@@ -6,56 +6,56 @@ import (
 	"sort"
 )
 
-type childList interface {
+type ChildList interface {
 	length() int
 	head() *Trie
-	add(child *Trie) childList
+	add(child *Trie) ChildList
 	remove(b byte)
 	replace(b byte, child *Trie)
 	next(b byte) *Trie
 	walk(prefix *Prefix, visitor VisitorFunc) error
 	print(w io.Writer, indent int)
-	clone() childList
+	clone() ChildList
 	total() int
 }
 
-type tries []*Trie
+type Tries []*Trie
 
-func (t tries) Len() int {
+func (t Tries) Len() int {
 	return len(t)
 }
 
-func (t tries) Less(i, j int) bool {
+func (t Tries) Less(i, j int) bool {
 	strings := sort.StringSlice{string(t[i].Prefix), string(t[j].Prefix)}
 	return strings.Less(0, 1)
 }
 
-func (t tries) Swap(i, j int) {
+func (t Tries) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
 }
 
-type sparseChildList struct {
-	children tries
+type SparseChildList struct {
+	Children Tries
 }
 
-func newSparseChildList(maxChildrenPerSparseNode int) childList {
-	return &sparseChildList{
-		children: make(tries, 0, maxChildrenPerSparseNode),
+func newSparseChildList(maxChildrenPerSparseNode int) ChildList {
+	return &SparseChildList{
+		Children: make(Tries, 0, maxChildrenPerSparseNode),
 	}
 }
 
-func (list *sparseChildList) length() int {
-	return len(list.children)
+func (list *SparseChildList) length() int {
+	return len(list.Children)
 }
 
-func (list *sparseChildList) head() *Trie {
-	return list.children[0]
+func (list *SparseChildList) head() *Trie {
+	return list.Children[0]
 }
 
-func (list *sparseChildList) add(child *Trie) childList {
+func (list *SparseChildList) add(child *Trie) ChildList {
 	// Search for an empty spot and insert the child if possible.
-	if len(list.children) != cap(list.children) {
-		list.children = append(list.children, child)
+	if len(list.Children) != cap(list.Children) {
+		list.Children = append(list.Children, child)
 		return list
 	}
 
@@ -63,12 +63,12 @@ func (list *sparseChildList) add(child *Trie) childList {
 	return newDenseChildList(list, child)
 }
 
-func (list *sparseChildList) remove(b byte) {
-	for i, node := range list.children {
+func (list *SparseChildList) remove(b byte) {
+	for i, node := range list.Children {
 		if node.Prefix[0] == b {
-			list.children[i] = list.children[len(list.children)-1]
-			list.children[len(list.children)-1] = nil
-			list.children = list.children[:len(list.children)-1]
+			list.Children[i] = list.Children[len(list.Children)-1]
+			list.Children[len(list.Children)-1] = nil
+			list.Children = list.Children[:len(list.Children)-1]
 			return
 		}
 	}
@@ -77,23 +77,23 @@ func (list *sparseChildList) remove(b byte) {
 	panic("removing non-existent child")
 }
 
-func (list *sparseChildList) replace(b byte, child *Trie) {
+func (list *SparseChildList) replace(b byte, child *Trie) {
 	// Make a consistency check.
 	if p0 := child.Prefix[0]; p0 != b {
 		panic(fmt.Errorf("child prefix mismatch: %v != %v", p0, b))
 	}
 
 	// Seek the child and replace it.
-	for i, node := range list.children {
+	for i, node := range list.Children {
 		if node.Prefix[0] == b {
-			list.children[i] = child
+			list.Children[i] = child
 			return
 		}
 	}
 }
 
-func (list *sparseChildList) next(b byte) *Trie {
-	for _, child := range list.children {
+func (list *SparseChildList) next(b byte) *Trie {
+	for _, child := range list.Children {
 		if child.Prefix[0] == b {
 			return child
 		}
@@ -101,11 +101,11 @@ func (list *sparseChildList) next(b byte) *Trie {
 	return nil
 }
 
-func (list *sparseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
+func (list *SparseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
 
-	sort.Sort(list.children)
+	sort.Sort(list.Children)
 
-	for _, child := range list.children {
+	for _, child := range list.Children {
 		*prefix = append(*prefix, child.Prefix...)
 		if child.Item != nil {
 			err := visitor(*prefix, child.Item)
@@ -129,9 +129,9 @@ func (list *sparseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
 	return nil
 }
 
-func (list *sparseChildList) total() int {
+func (list *SparseChildList) total() int {
 	tot := 0
-	for _, child := range list.children {
+	for _, child := range list.Children {
 		if child != nil {
 			tot = tot + child.total()
 		}
@@ -139,39 +139,39 @@ func (list *sparseChildList) total() int {
 	return tot
 }
 
-func (list *sparseChildList) clone() childList {
-	clones := make(tries, len(list.children), cap(list.children))
-	for i, child := range list.children {
+func (list *SparseChildList) clone() ChildList {
+	clones := make(Tries, len(list.Children), cap(list.Children))
+	for i, child := range list.Children {
 		clones[i] = child.Clone()
 	}
 
-	return &sparseChildList{
-		children: clones,
+	return &SparseChildList{
+		Children: clones,
 	}
 }
 
-func (list *sparseChildList) print(w io.Writer, indent int) {
-	for _, child := range list.children {
+func (list *SparseChildList) print(w io.Writer, indent int) {
+	for _, child := range list.Children {
 		if child != nil {
 			child.print(w, indent)
 		}
 	}
 }
 
-type denseChildList struct {
-	min         int
-	max         int
-	numChildren int
-	headIndex   int
-	children    []*Trie
+type DenseChildList struct {
+	Min         int
+	Max         int
+	NumChildren int
+	HeadIndex   int
+	Children    []*Trie
 }
 
-func newDenseChildList(list *sparseChildList, child *Trie) childList {
+func newDenseChildList(list *SparseChildList, child *Trie) ChildList {
 	var (
 		min int = 255
 		max int = 0
 	)
-	for _, child := range list.children {
+	for _, child := range list.Children {
 		b := int(child.Prefix[0])
 		if b < min {
 			min = b
@@ -190,104 +190,104 @@ func newDenseChildList(list *sparseChildList, child *Trie) childList {
 	}
 
 	children := make([]*Trie, max-min+1)
-	for _, child := range list.children {
+	for _, child := range list.Children {
 		children[int(child.Prefix[0])-min] = child
 	}
 	children[int(child.Prefix[0])-min] = child
 
-	return &denseChildList{
-		min:         min,
-		max:         max,
-		numChildren: list.length() + 1,
-		headIndex:   0,
-		children:    children,
+	return &DenseChildList{
+		Min:         min,
+		Max:         max,
+		NumChildren: list.length() + 1,
+		HeadIndex:   0,
+		Children:    children,
 	}
 }
 
-func (list *denseChildList) length() int {
-	return list.numChildren
+func (list *DenseChildList) length() int {
+	return list.NumChildren
 }
 
-func (list *denseChildList) head() *Trie {
-	return list.children[list.headIndex]
+func (list *DenseChildList) head() *Trie {
+	return list.Children[list.HeadIndex]
 }
 
-func (list *denseChildList) add(child *Trie) childList {
+func (list *DenseChildList) add(child *Trie) ChildList {
 	b := int(child.Prefix[0])
 	var i int
 
 	switch {
-	case list.min <= b && b <= list.max:
-		if list.children[b-list.min] != nil {
+	case list.Min <= b && b <= list.Max:
+		if list.Children[b-list.Min] != nil {
 			panic("dense child list collision detected")
 		}
-		i = b - list.min
-		list.children[i] = child
+		i = b - list.Min
+		list.Children[i] = child
 
-	case b < list.min:
-		children := make([]*Trie, list.max-b+1)
+	case b < list.Min:
+		children := make([]*Trie, list.Max-b+1)
 		i = 0
 		children[i] = child
-		copy(children[list.min-b:], list.children)
-		list.children = children
-		list.min = b
+		copy(children[list.Min-b:], list.Children)
+		list.Children = children
+		list.Min = b
 
 	default: // b > list.max
-		children := make([]*Trie, b-list.min+1)
-		i = b - list.min
+		children := make([]*Trie, b-list.Min+1)
+		i = b - list.Min
 		children[i] = child
-		copy(children, list.children)
-		list.children = children
-		list.max = b
+		copy(children, list.Children)
+		list.Children = children
+		list.Max = b
 	}
 
-	list.numChildren++
-	if i < list.headIndex {
-		list.headIndex = i
+	list.NumChildren++
+	if i < list.HeadIndex {
+		list.HeadIndex = i
 	}
 	return list
 }
 
-func (list *denseChildList) remove(b byte) {
-	i := int(b) - list.min
-	if list.children[i] == nil {
+func (list *DenseChildList) remove(b byte) {
+	i := int(b) - list.Min
+	if list.Children[i] == nil {
 		// This is not supposed to be reached.
 		panic("removing non-existent child")
 	}
-	list.numChildren--
-	list.children[i] = nil
+	list.NumChildren--
+	list.Children[i] = nil
 
 	// Update head index.
-	if i == list.headIndex {
-		for ; i < len(list.children); i++ {
-			if list.children[i] != nil {
-				list.headIndex = i
+	if i == list.HeadIndex {
+		for ; i < len(list.Children); i++ {
+			if list.Children[i] != nil {
+				list.HeadIndex = i
 				return
 			}
 		}
 	}
 }
 
-func (list *denseChildList) replace(b byte, child *Trie) {
+func (list *DenseChildList) replace(b byte, child *Trie) {
 	// Make a consistency check.
 	if p0 := child.Prefix[0]; p0 != b {
 		panic(fmt.Errorf("child prefix mismatch: %v != %v", p0, b))
 	}
 
 	// Replace the child.
-	list.children[int(b)-list.min] = child
+	list.Children[int(b)-list.Min] = child
 }
 
-func (list *denseChildList) next(b byte) *Trie {
+func (list *DenseChildList) next(b byte) *Trie {
 	i := int(b)
-	if i < list.min || list.max < i {
+	if i < list.Min || list.Max < i {
 		return nil
 	}
-	return list.children[i-list.min]
+	return list.Children[i-list.Min]
 }
 
-func (list *denseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
-	for _, child := range list.children {
+func (list *DenseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
+	for _, child := range list.Children {
 		if child == nil {
 			continue
 		}
@@ -313,43 +313,43 @@ func (list *denseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
 	return nil
 }
 
-func (list *denseChildList) print(w io.Writer, indent int) {
-	for _, child := range list.children {
+func (list *DenseChildList) print(w io.Writer, indent int) {
+	for _, child := range list.Children {
 		if child != nil {
 			child.print(w, indent)
 		}
 	}
 }
 
-func (list *denseChildList) clone() childList {
-	clones := make(tries, cap(list.children))
+func (list *DenseChildList) clone() ChildList {
+	clones := make(Tries, cap(list.Children))
 
-	if list.numChildren != 0 {
+	if list.NumChildren != 0 {
 		clonedCount := 0
-		for i := list.headIndex; i < len(list.children); i++ {
-			child := list.children[i]
+		for i := list.HeadIndex; i < len(list.Children); i++ {
+			child := list.Children[i]
 			if child != nil {
 				clones[i] = child.Clone()
 				clonedCount++
-				if clonedCount == list.numChildren {
+				if clonedCount == list.NumChildren {
 					break
 				}
 			}
 		}
 	}
 
-	return &denseChildList{
-		min:         list.min,
-		max:         list.max,
-		numChildren: list.numChildren,
-		headIndex:   list.headIndex,
-		children:    clones,
+	return &DenseChildList{
+		Min:         list.Min,
+		Max:         list.Max,
+		NumChildren: list.NumChildren,
+		HeadIndex:   list.HeadIndex,
+		Children:    clones,
 	}
 }
 
-func (list *denseChildList) total() int {
+func (list *DenseChildList) total() int {
 	tot := 0
-	for _, child := range list.children {
+	for _, child := range list.Children {
 		if child != nil {
 			tot = tot + child.total()
 		}
