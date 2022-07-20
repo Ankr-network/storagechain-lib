@@ -1,9 +1,47 @@
 package indexer
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/binary"
+	"fmt"
 	"unsafe"
+
+	"github.com/valyala/gozstd"
 )
+
+func Marshal(trie *Trie) ([]byte, error) {
+	var buffer bytes.Buffer
+	buffer.Reset()
+	trie.Walk(nil, func(prefix []byte, item *Item) error {
+		buffer.Write(prefix)
+		buffer.Write(Itos(item.Pos))
+		buffer.Write(Itos(item.Length))
+		return nil
+	})
+	return gozstd.Compress(nil, buffer.Bytes()), nil
+}
+
+func Unmarshal(data []byte) (*Trie, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("data is empty")
+	}
+	ds, err := gozstd.Decompress(nil, data)
+	if err != nil {
+		return nil, err
+	}
+	trie := NewTrie()
+	scanner := bufio.NewScanner(bytes.NewReader(ds))
+	scanner.Split(ScanData)
+	var line, key []byte
+	for scanner.Scan() {
+		line = scanner.Bytes()
+		key = make([]byte, 32)
+		copy(key, line[:32])
+		trie.Insert(key, &Item{Pos: Stoi(line[32:40]), Length: Stoi(line[40:48])})
+	}
+	return trie, nil
+}
 
 func Itos(n uint64) []byte {
 	b := make([]byte, 8)
@@ -30,12 +68,12 @@ func ScanData(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	// Request more data.
 	return 0, nil, nil
 }
-func froms(s string) []byte {
+func Froms(s string) []byte {
 	x := (*[2]uintptr)(unsafe.Pointer(&s))
 	h := [3]uintptr{x[0], x[1], x[1]}
 	return *(*[]byte)(unsafe.Pointer(&h))
 }
 
-func tos(b []byte) string {
+func Tos(b []byte) string {
 	return *(*string)(unsafe.Pointer(&b))
 }

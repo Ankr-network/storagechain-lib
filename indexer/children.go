@@ -13,7 +13,7 @@ type ChildList interface {
 	remove(b byte)
 	replace(b byte, child *Trie)
 	next(b byte) *Trie
-	walk(prefix *Prefix, visitor VisitorFunc) error
+	walk(prefix *[]byte, visitor VisitorFunc) error
 	print(w io.Writer, indent int)
 	clone() ChildList
 	total() int
@@ -101,7 +101,7 @@ func (list *SparseChildList) next(b byte) *Trie {
 	return nil
 }
 
-func (list *SparseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
+func (list *SparseChildList) walk(prefix *[]byte, visitor VisitorFunc) error {
 
 	sort.Sort(list.Children)
 
@@ -110,7 +110,7 @@ func (list *SparseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
 		if child.Item != nil {
 			err := visitor(*prefix, child.Item)
 			if err != nil {
-				if err == SkipSubtree {
+				if err == ErrSkipSubtree {
 					*prefix = (*prefix)[:len(*prefix)-len(child.Prefix)]
 					continue
 				}
@@ -286,7 +286,7 @@ func (list *DenseChildList) next(b byte) *Trie {
 	return list.Children[i-list.Min]
 }
 
-func (list *DenseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
+func (list *DenseChildList) walk(prefix *[]byte, visitor VisitorFunc) error {
 	for _, child := range list.Children {
 		if child == nil {
 			continue
@@ -294,7 +294,7 @@ func (list *DenseChildList) walk(prefix *Prefix, visitor VisitorFunc) error {
 		*prefix = append(*prefix, child.Prefix...)
 		if child.Item != nil {
 			if err := visitor(*prefix, child.Item); err != nil {
-				if err == SkipSubtree {
+				if err == ErrSkipSubtree {
 					*prefix = (*prefix)[:len(*prefix)-len(child.Prefix)]
 					continue
 				}

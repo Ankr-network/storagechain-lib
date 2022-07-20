@@ -17,17 +17,16 @@ const (
 )
 
 type (
-	Prefix []byte
-	Item   struct {
+	Item struct {
 		Pos    uint64
 		Length uint64
 	}
-	VisitorFunc func(prefix Prefix, item *Item) error
+	VisitorFunc func(prefix []byte, item *Item) error
 )
 
 // Trie is not thread-safe.
 type Trie struct {
-	Prefix Prefix
+	Prefix []byte
 	Item   *Item
 
 	Children ChildList
@@ -41,10 +40,17 @@ var (
 	SplitChar = []byte("|")
 )
 
+// Trie constructor.
+func NewTrie() *Trie {
+	trie := &Trie{}
+
+	trie.Children = newSparseChildList(defaultMaxChildrenPerSparseNode)
+	return trie
+}
 func (trie *Trie) Marshal() ([]byte, error) {
 	var buffer bytes.Buffer
 	buffer.Reset()
-	trie.Walk(nil, func(prefix Prefix, item *Item) error {
+	trie.Walk(nil, func(prefix []byte, item *Item) error {
 		buffer.Write(prefix)
 		buffer.Write(Itos(item.Pos))
 		buffer.Write(Itos(item.Length))
@@ -54,39 +60,30 @@ func (trie *Trie) Marshal() ([]byte, error) {
 }
 
 func (trie *Trie) Unmarshal(data []byte) error {
+	if len(data) == 0 {
+		return fmt.Errorf("data is empty")
+	}
 	ds, err := gozstd.Decompress(nil, data)
 	if err != nil {
 		return err
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(ds))
 	scanner.Split(ScanData)
+	var line, key []byte
 	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		fmt.Printf("line: %q\n", line)
-		key := line[:32]
-		pos := Stoi(line[32:40])
-		length := Stoi(line[40:48])
-		trie.Set(key, &Item{Pos: pos, Length: length})
+		line = scanner.Bytes()
+		key = make([]byte, 32)
+		copy(key, line[:32])
+		trie.Insert(key, &Item{Pos: Stoi(line[32:40]), Length: Stoi(line[40:48])})
 	}
 	return nil
-}
-
-// Trie constructor.
-func NewTrie() *Trie {
-	trie := &Trie{}
-
-	trie.Children = newSparseChildList(defaultMaxChildrenPerSparseNode)
-	return trie
 }
 
 // Clone makes a copy of an existing trie.
 // Items stored in both tries become shared, obviously.
 func (trie *Trie) Clone() *Trie {
 	return &Trie{
-		Prefix:   append(Prefix(nil), trie.Prefix...),
+		Prefix:   append([]byte{}, trie.Prefix...),
 		Item:     trie.Item,
 		Children: trie.Children.clone(),
 	}
@@ -99,13 +96,13 @@ func (trie *Trie) Value() *Item {
 
 // Insert inserts a new item into the trie using the given prefix. Insert does
 // not replace existing items. It returns false if an item was already in place.
-func (trie *Trie) Insert(key Prefix, item *Item) (inserted bool) {
+func (trie *Trie) Insert(key []byte, item *Item) (inserted bool) {
 	return trie.put(key, item, false)
 }
 
 // Set works much like Insert, but it always sets the item, possibly replacing
 // the item previously inserted.
-func (trie *Trie) Set(key Prefix, item *Item) {
+func (trie *Trie) Set(key []byte, item *Item) {
 	trie.put(key, item, true)
 }
 
@@ -117,7 +114,7 @@ func (trie *Trie) Set(key Prefix, item *Item) {
 // into the tree by the user or not. A possible workaround for this is not to use
 // nil interface as a valid value, even using zero value of any type is enough
 // to prevent this bad behaviour.
-func (trie *Trie) Get(key Prefix) (item *Item) {
+func (trie *Trie) Get(key []byte) (item *Item) {
 	_, node, found, leftover := trie.findSubtree(key)
 	if !found || len(leftover) != 0 {
 		return nil
@@ -127,13 +124,13 @@ func (trie *Trie) Get(key Prefix) (item *Item) {
 
 // Match returns what Get(prefix) != nil would return. The same warning as for
 // Get applies here as well.
-func (trie *Trie) Match(prefix Prefix) (matchedExactly bool) {
+func (trie *Trie) Match(prefix []byte) (matchedExactly bool) {
 	return trie.Get(prefix) != nil
 }
 
 // MatchSubtree returns true when there is a subtree representing extensions
 // to key, that is if there are any keys in the tree which have key as prefix.
-func (trie *Trie) MatchSubtree(key Prefix) (matched bool) {
+func (trie *Trie) MatchSubtree(key []byte) (matched bool) {
 	_, _, matched, _ = trie.findSubtree(key)
 	return
 }
@@ -152,7 +149,7 @@ func (trie *Trie) Visit(visitor VisitorFunc) error {
 func (trie *Trie) Size() int {
 	n := 0
 
-	trie.Walk(nil, func(_ Prefix, _ *Item) error {
+	trie.Walk(nil, func(_ []byte, _ *Item) error {
 		n++
 		return nil
 	})
@@ -165,7 +162,7 @@ func (trie *Trie) total() int {
 }
 
 // VisitSubtree works much like Visit, but it only visits nodes matching prefix.
-func (trie *Trie) VisitSubtree(prefix Prefix, visitor VisitorFunc) error {
+func (trie *Trie) VisitSubtree(prefix []byte, visitor VisitorFunc) error {
 	// Nil prefix not allowed.
 	if prefix == nil {
 		panic(ErrNilPrefix)
@@ -189,7 +186,7 @@ func (trie *Trie) VisitSubtree(prefix Prefix, visitor VisitorFunc) error {
 
 // VisitPrefixes visits only nodes that represent prefixes of key.
 // To say the obvious, returning SkipSubtree from visitor makes no sense here.
-func (trie *Trie) VisitPrefixes(key Prefix, visitor VisitorFunc) error {
+func (trie *Trie) VisitPrefixes(key []byte, visitor VisitorFunc) error {
 	// Nil key not allowed.
 	if key == nil {
 		panic(ErrNilPrefix)
@@ -241,7 +238,7 @@ func (trie *Trie) VisitPrefixes(key Prefix, visitor VisitorFunc) error {
 // Delete deletes the item represented by the given prefix.
 //
 // True is returned if the matching node was found and deleted.
-func (trie *Trie) Delete(key Prefix) (deleted bool) {
+func (trie *Trie) Delete(key []byte) (deleted bool) {
 	// Nil prefix not allowed.
 	if key == nil {
 		panic(ErrNilPrefix)
@@ -334,7 +331,7 @@ Compact:
 // DeleteSubtree finds the subtree exactly matching prefix and deletes it.
 //
 // True is returned if the subtree was found and deleted.
-func (trie *Trie) DeleteSubtree(prefix Prefix) (deleted bool) {
+func (trie *Trie) DeleteSubtree(prefix []byte) (deleted bool) {
 	// Nil prefix not allowed.
 	if prefix == nil {
 		panic(ErrNilPrefix)
@@ -364,7 +361,7 @@ func (trie *Trie) DeleteSubtree(prefix Prefix) (deleted bool) {
 
 // Internal helper methods -----------------------------------------------------
 
-func (trie *Trie) empty() bool {
+func (trie *Trie) Empty() bool {
 	return trie.Item == nil && trie.Children.length() == 0
 }
 
@@ -373,7 +370,7 @@ func (trie *Trie) reset() {
 	trie.Children = newSparseChildList(defaultMaxPrefixPerNode)
 }
 
-func (trie *Trie) put(key Prefix, item *Item, replace bool) (inserted bool) {
+func (trie *Trie) put(key []byte, item *Item, replace bool) (inserted bool) {
 	// Nil prefix not allowed.
 	if key == nil {
 		panic(ErrNilPrefix)
@@ -486,7 +483,7 @@ func (trie *Trie) compact() *Trie {
 	return child
 }
 
-func (trie *Trie) findSubtree(prefix Prefix) (parent *Trie, root *Trie, found bool, leftover Prefix) {
+func (trie *Trie) findSubtree(prefix []byte) (parent *Trie, root *Trie, found bool, leftover []byte) {
 	// Find the subtree matching prefix.
 	root = trie
 	for {
@@ -519,7 +516,7 @@ func (trie *Trie) findSubtree(prefix Prefix) (parent *Trie, root *Trie, found bo
 	}
 }
 
-func (trie *Trie) findSubtreePath(prefix Prefix) (path []*Trie, found bool, leftover Prefix) {
+func (trie *Trie) findSubtreePath(prefix []byte) (path []*Trie, found bool, leftover []byte) {
 	// Find the subtree matching prefix.
 	root := trie
 	var subtreePath []*Trie
@@ -556,15 +553,15 @@ func (trie *Trie) findSubtreePath(prefix Prefix) (path []*Trie, found bool, left
 	}
 }
 
-func (trie *Trie) Walk(actualRootPrefix Prefix, visitor VisitorFunc) error {
-	var prefix Prefix
+func (trie *Trie) Walk(actualRootPrefix []byte, visitor VisitorFunc) error {
+	var prefix []byte
 	// Allocate a bit more space for prefix at the beginning.
 	if actualRootPrefix == nil {
-		prefix = make(Prefix, 32+len(trie.Prefix))
+		prefix = make([]byte, 32+len(trie.Prefix))
 		copy(prefix, trie.Prefix)
 		prefix = prefix[:len(trie.Prefix)]
 	} else {
-		prefix = make(Prefix, 32+len(actualRootPrefix))
+		prefix = make([]byte, 32+len(actualRootPrefix))
 		copy(prefix, actualRootPrefix)
 		prefix = prefix[:len(actualRootPrefix)]
 	}
@@ -573,7 +570,7 @@ func (trie *Trie) Walk(actualRootPrefix Prefix, visitor VisitorFunc) error {
 	// in that case item == nil && len(children) == 0.
 	if trie.Item != nil {
 		if err := visitor(prefix, trie.Item); err != nil {
-			if err == SkipSubtree {
+			if err == ErrSkipSubtree {
 				return nil
 			}
 			return err
@@ -584,7 +581,7 @@ func (trie *Trie) Walk(actualRootPrefix Prefix, visitor VisitorFunc) error {
 	return trie.Children.walk(&prefix, visitor)
 }
 
-func (trie *Trie) longestCommonPrefixLength(prefix Prefix) (i int) {
+func (trie *Trie) longestCommonPrefixLength(prefix []byte) (i int) {
 	for ; i < len(prefix) && i < len(trie.Prefix) && prefix[i] == trie.Prefix[i]; i++ {
 	}
 	return
@@ -604,6 +601,6 @@ func (trie *Trie) print(writer io.Writer, indent int) {
 // Errors ----------------------------------------------------------------------
 
 var (
-	SkipSubtree  = errors.New("Skip this subtree")
-	ErrNilPrefix = errors.New("Nil prefix passed into a method call")
+	ErrSkipSubtree = errors.New("skip this subtree")
+	ErrNilPrefix   = errors.New("nil prefix passed into a method call")
 )
