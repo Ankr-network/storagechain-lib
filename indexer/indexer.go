@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"strings"
 
 	"github.com/valyala/gozstd"
@@ -31,14 +32,6 @@ type Trie struct {
 
 	Children ChildList
 }
-
-const (
-	EndChar = '\n'
-)
-
-var (
-	SplitChar = []byte("|")
-)
 
 // Trie constructor.
 func NewTrie() *Trie {
@@ -77,6 +70,33 @@ func (trie *Trie) Unmarshal(data []byte) error {
 		trie.Insert(key, &Item{Pos: Stoi(line[32:40]), Length: Stoi(line[40:48])})
 	}
 	return nil
+}
+
+const magicNumber = 5201314
+
+func (trie *Trie) SaveToFile(filename string) error {
+	buffer := bytes.NewBuffer(nil)
+	buffer.Write(Itos(magicNumber))
+	ts, err := trie.Marshal()
+	if err != nil {
+		return err
+	}
+	buffer.Write(ts)
+	ioutil.WriteFile(filename, buffer.Bytes(), 0644)
+	return nil
+}
+
+func (trie *Trie) ReadFromFile(filename string) error {
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	mn := Stoi(data[:8])
+	if mn != magicNumber {
+		return errors.New("invalid data file")
+	}
+	return trie.Unmarshal(data[8:])
 }
 
 // Clone makes a copy of an existing trie.

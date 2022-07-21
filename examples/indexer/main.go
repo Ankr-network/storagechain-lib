@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -15,9 +16,41 @@ import (
 func main() {
 
 	// testFunc()
-	testCompress()
+	// testCompress()
 	// testHashLen()
+	testFile()
 
+}
+
+func testFile() {
+	filename := "test.trie"
+
+	hasher := sha256.New()
+
+	items := make([]*TestItem, 0)
+	for i := 0; i < 20; i++ {
+		hasher.Reset()
+		hasher.Write([]byte(strings.Repeat(strconv.Itoa(i), 4)))
+		items = append(items, &TestItem{Prefix: hasher.Sum(nil), Item: &indexer.Item{Pos: uint64(i), Length: uint64(i)}})
+	}
+	trie := indexer.NewTrie()
+	for _, item := range items {
+		trie.Insert(item.Prefix, item.Item)
+	}
+	trie.SaveToFile(filename)
+
+	trie2 := indexer.NewTrie()
+	trie2.ReadFromFile(filename)
+	var key = 18
+	hasher.Reset()
+	hasher.Write([]byte(strings.Repeat(strconv.Itoa(key), 4)))
+	target := hasher.Sum(nil)
+	item := trie.Get(target)
+	fmt.Printf("trie key: %s item: %v\n", hex.EncodeToString(target), item)
+	item = trie2.Get(target)
+	fmt.Printf("trie2 key: %s item: %v\n", hex.EncodeToString(target), item)
+	fmt.Printf("remove file: %s\n", filename)
+	os.RemoveAll(filename)
 }
 
 func testHashLen() {
