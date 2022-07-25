@@ -1,0 +1,42 @@
+=============== Jul 25, 2022 (CST) ===============
+11:24:07.159258 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+11:24:07.164253 db@open opening
+11:24:07.165931 version@stat F·[] S·0B[] Sc·[]
+11:24:07.168382 db@janitor F·2 G·0
+11:24:07.168408 db@open done T·4.135898ms
+11:24:07.168660 db@close closing
+11:24:07.168718 db@close done T·57.149µs
+=============== Jul 25, 2022 (CST) ===============
+11:25:02.209179 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+11:25:02.209249 version@stat F·[] S·0B[] Sc·[]
+11:25:02.209256 db@open opening
+11:25:02.209268 journal@recovery F·1
+11:25:02.210061 journal@recovery recovering @1
+11:25:02.210843 version@stat F·[] S·0B[] Sc·[]
+11:25:02.217544 db@janitor F·2 G·0
+11:25:02.217790 db@open done T·8.524466ms
+11:25:02.217934 db@close closing
+11:25:02.217998 db@close done T·63.275µs
+=============== Jul 25, 2022 (CST) ===============
+11:25:16.213663 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+11:25:16.213799 version@stat F·[] S·0B[] Sc·[]
+11:25:16.213819 db@open opening
+11:25:16.213854 journal@recovery F·1
+11:25:16.215645 journal@recovery recovering @2
+11:25:16.217115 version@stat F·[] S·0B[] Sc·[]
+11:25:16.223976 db@janitor F·2 G·0
+11:25:16.224215 db@open done T·10.367936ms
+11:25:16.225071 db@close closing
+11:25:16.225149 db@close done T·76.137µs
+=============== Jul 25, 2022 (CST) ===============
+11:26:02.289126 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+11:26:02.289202 version@stat F·[] S·0B[] Sc·[]
+11:26:02.289211 db@open opening
+11:26:02.289226 journal@recovery F·1
+11:26:02.290334 journal@recovery recovering @4
+11:26:02.291840 memdb@flush created L0@6 N·7 S·654B "\tȉ..\xde\xf2\x10,v7":"\xdf\xfd...K\x86\xf7,v4"
+11:26:02.292579 version@stat F·[1] S·654B[654B] Sc·[0.25]
+11:26:02.299007 db@janitor F·3 G·0
+11:26:02.299167 db@open done T·9.949389ms
+11:26:02.299342 db@close closing
+11:26:02.299415 db@close done T·67.777µs

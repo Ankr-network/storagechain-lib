@@ -18,7 +18,23 @@ func main() {
 	// testFunc()
 	// testCompress()
 	// testHashLen()
-	testFile()
+	// testFile()
+	testbig()
+
+}
+
+func testbig() {
+	const yie = 10e7
+	filename := "test.trie"
+
+	hasher := sha256.New()
+	trie := indexer.NewTrie()
+	for i := 0; i < yie; i++ {
+		hasher.Reset()
+		hasher.Write([]byte(strings.Repeat(strconv.Itoa(i), 4)))
+		trie.Insert(hasher.Sum(nil), &indexer.Item{Pos: uint64(i), Length: uint64(i)})
+	}
+	trie.SaveToFile(filename)
 
 }
 
